@@ -25,6 +25,7 @@ type Entry struct {
 
 type Candidate struct {
 	Entry    Entry
+	Match    string
 	Selected bool
 	Problems []string
 }
@@ -32,6 +33,7 @@ type Candidate struct {
 type Result struct {
 	Query      string
 	ID         string
+	MatchMode  string
 	Candidates []Candidate
 }
 
@@ -45,8 +47,24 @@ func Lookup(query string, opts Options) (Result, error) {
 		return Result{}, err
 	}
 
-	searchDirs := dataApplicationsDirs()
-	var candidates []Candidate
+	entries, err := collectEntries(dataApplicationsDirs(), opts)
+	if err != nil {
+		return Result{}, err
+	}
+
+	candidates, matchMode := matchEntries(entries, id)
+	selectCandidates(candidates)
+
+	return Result{
+		Query:      query,
+		ID:         id,
+		MatchMode:  matchMode,
+		Candidates: candidates,
+	}, nil
+}
+
+func collectEntries(searchDirs []string, opts Options) ([]Candidate, error) {
+	var entries []Candidate
 	seen := make(map[string]bool)
 
 	for priority, dir := range searchDirs {
@@ -66,9 +84,6 @@ func Lookup(query string, opts Options) (Result, error) {
 				return nil
 			}
 			entryID := strings.ReplaceAll(filepath.ToSlash(rel), "/", "-")
-			if entryID != id {
-				return nil
-			}
 			if seen[path] {
 				return nil
 			}
@@ -79,16 +94,49 @@ func Lookup(query string, opts Options) (Result, error) {
 			entry.Path = path
 			entry.Priority = priority
 			problems = append(problems, visibilityProblems(entry, opts)...)
-			candidates = append(candidates, Candidate{
+			entries = append(entries, Candidate{
 				Entry:    entry,
 				Problems: problems,
 			})
 			return nil
 		}); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return Result{}, err
+			return nil, err
 		}
 	}
 
+	return entries, nil
+}
+
+func matchEntries(entries []Candidate, id string) ([]Candidate, string) {
+	exact := filterCandidates(entries, func(entryID string) bool {
+		return entryID == id
+	}, "exact")
+	if len(exact) > 0 {
+		return exact, "exact"
+	}
+
+	trimmed := filterCandidates(entries, func(entryID string) bool {
+		return trimmedDesktopID(entryID) == id
+	}, "trimmed")
+	if len(trimmed) > 0 {
+		return trimmed, "trimmed"
+	}
+
+	return nil, ""
+}
+
+func filterCandidates(entries []Candidate, matches func(string) bool, mode string) []Candidate {
+	var candidates []Candidate
+	for _, candidate := range entries {
+		if matches(candidate.Entry.ID) {
+			candidate.Match = mode
+			candidates = append(candidates, candidate)
+		}
+	}
+	return candidates
+}
+
+func selectCandidates(candidates []Candidate) {
 	sort.SliceStable(candidates, func(i, j int) bool {
 		return candidates[i].Entry.Priority < candidates[j].Entry.Priority
 	})
@@ -98,12 +146,6 @@ func Lookup(query string, opts Options) (Result, error) {
 			candidates[i].Problems = append([]string{"shadowed by higher-priority desktop file"}, candidates[i].Problems...)
 		}
 	}
-
-	return Result{
-		Query:      query,
-		ID:         id,
-		Candidates: candidates,
-	}, nil
 }
 
 func normalizeQuery(query string) (string, error) {
@@ -124,6 +166,15 @@ func normalizeQuery(query string) (string, error) {
 	}
 
 	return query + ".desktop", nil
+}
+
+func trimmedDesktopID(id string) string {
+	name := strings.TrimSuffix(id, ".desktop")
+	parts := strings.Split(name, ".")
+	if len(parts) > 1 {
+		return parts[len(parts)-1] + ".desktop"
+	}
+	return id
 }
 
 func dataApplicationsDirs() []string {

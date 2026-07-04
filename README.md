@@ -23,6 +23,10 @@ The important lookup rules are local filesystem rules:
 - `Hidden`, `OnlyShowIn`, `NotShowIn`, `NoDisplay`, and `TryExec` can affect
   whether the found entry is useful in a real desktop environment.
 
+For convenience, `xdg-which` first tries the exact desktop file ID. If that does
+not exist, it also tries a trimmed reverse-domain name. For example, `zathura`
+can match `org.pwmt.zathura.desktop`.
+
 Existing tools cover adjacent pieces, but not this exact question:
 
 - `xdg-mime query default <mime>` returns a desktop file ID for a MIME type, but
@@ -49,6 +53,7 @@ go build ./cmd/xdg-which
 ```sh
 xdg-which org.example.App
 xdg-which org.example.App.desktop
+xdg-which zathura
 xdg-which --desktop KDE org.example.App
 xdg-which -q org.example.App
 ```

@@ -39,7 +39,7 @@ func TestLookupMapsSubdirectoryToDesktopID(t *testing.T) {
 	writeDesktop(t, filepath.Join(root, "applications", "kde", "org.example.App.desktop"), "Name=KDE\nExec=app\n")
 
 	t.Setenv("XDG_DATA_HOME", root)
-	t.Setenv("XDG_DATA_DIRS", "")
+	t.Setenv("XDG_DATA_DIRS", filepath.Join(root, "empty"))
 
 	result, err := Lookup("kde-org.example.App.desktop", Options{})
 	if err != nil {
@@ -50,12 +50,57 @@ func TestLookupMapsSubdirectoryToDesktopID(t *testing.T) {
 	}
 }
 
+func TestLookupMatchesTrimmedReverseDomainID(t *testing.T) {
+	root := t.TempDir()
+	writeDesktop(t, filepath.Join(root, "applications", "org.pwmt.zathura.desktop"), "Name=Zathura\nExec=zathura\n")
+
+	t.Setenv("XDG_DATA_HOME", root)
+	t.Setenv("XDG_DATA_DIRS", filepath.Join(root, "empty"))
+
+	result, err := Lookup("zathura", Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.MatchMode != "trimmed" {
+		t.Fatalf("match mode = %q, want trimmed", result.MatchMode)
+	}
+	if len(result.Candidates) != 1 {
+		t.Fatalf("candidate count = %d, want 1", len(result.Candidates))
+	}
+	if got := result.Candidates[0].Entry.ID; got != "org.pwmt.zathura.desktop" {
+		t.Fatalf("selected ID = %q, want org.pwmt.zathura.desktop", got)
+	}
+}
+
+func TestLookupPrefersExactMatchOverTrimmedMatch(t *testing.T) {
+	root := t.TempDir()
+	writeDesktop(t, filepath.Join(root, "applications", "zathura.desktop"), "Name=Plain\nExec=zathura\n")
+	writeDesktop(t, filepath.Join(root, "applications", "org.pwmt.zathura.desktop"), "Name=Prefixed\nExec=zathura\n")
+
+	t.Setenv("XDG_DATA_HOME", root)
+	t.Setenv("XDG_DATA_DIRS", filepath.Join(root, "empty"))
+
+	result, err := Lookup("zathura", Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.MatchMode != "exact" {
+		t.Fatalf("match mode = %q, want exact", result.MatchMode)
+	}
+	if len(result.Candidates) != 1 {
+		t.Fatalf("candidate count = %d, want 1", len(result.Candidates))
+	}
+	if got := result.Candidates[0].Entry.ID; got != "zathura.desktop" {
+		t.Fatalf("selected ID = %q, want zathura.desktop", got)
+	}
+}
+
 func TestLookupReportsVisibilityProblems(t *testing.T) {
 	root := t.TempDir()
 	writeDesktop(t, filepath.Join(root, "applications", "org.example.Hidden.desktop"), "Name=Hidden\nHidden=true\nOnlyShowIn=GNOME;\nTryExec=/definitely/missing\n")
 
 	t.Setenv("XDG_DATA_HOME", root)
-	t.Setenv("XDG_DATA_DIRS", "")
+	t.Setenv("XDG_DATA_DIRS", filepath.Join(root, "empty"))
 
 	result, err := Lookup("org.example.Hidden", Options{Desktop: "KDE"})
 	if err != nil {

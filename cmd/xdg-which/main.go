@@ -45,6 +45,10 @@ func main() {
 
 	fmt.Printf("id: %s\n", result.ID)
 	fmt.Printf("selected: %s\n", selected.Entry.Path)
+	if result.MatchMode == "trimmed" {
+		fmt.Printf("matched id: %s\n", selected.Entry.ID)
+		fmt.Println("match: trimmed reverse-domain prefix")
+	}
 	if len(selected.Problems) == 0 {
 		fmt.Println("status: visible")
 	} else {
